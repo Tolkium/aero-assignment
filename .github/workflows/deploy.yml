@@ -1,0 +1,62 @@
+name: Deploy Angular (aero-assignment) to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Improve npm resilience
+        run: |
+          npm config set fetch-retries 5
+          npm config set fetch-retry-mintimeout 20000
+          npm config set fetch-retry-maxtimeout 120000
+
+      - name: Install (with retries)
+        run: |
+          for i in 1 2 3; do \
+            npm ci --no-audit --fund=false && break || (echo "npm ci failed (attempt $i), retrying..."; sleep 10); \
+          done
+
+      - name: Build (Angular 18 output goes to dist/<app>/browser)
+        run: npm run build -- --base-href=/aero-assignment/
+
+      - name: Add SPA fallback (404.html)
+        run: |
+          OUT=dist/aero-assignment/browser
+          if [ -f "$OUT/index.html" ]; then cp "$OUT/index.html" "$OUT/404.html"; fi
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/aero-assignment/browser
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+
